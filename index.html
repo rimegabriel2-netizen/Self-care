@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mon Planificateur Self-Care</title>
+  <style>
+    /* Ton design original */
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+    .app{max-width:600px;margin:0 auto;padding:1rem}
+    .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+    section{background:#1e293b;border-radius:12px;padding:1rem;margin-bottom:1rem;border:1px solid #334155}
+    input, button, textarea{width:100%;padding:0.75rem;margin-bottom:0.5rem;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#fff}
+    button{background:#6366f1;border:none;font-weight:600;cursor:pointer}
+    .day-pill{padding:8px 12px;background:#334155;border-radius:20px;cursor:pointer;font-size:14px}
+    .day-pill.active{background:#6366f1}
+    .task-card{background:#334155;padding:10px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between}
+    .hidden{display:none}
+    .status-msg{font-size:0.8rem;text-align:center;color:#94a3b8}
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <div id="authSection">
+    <section>
+      <h1>🌸 Self Care Login</h1>
+      <input type="email" id="emailInput" placeholder="Ton email...">
+      <button id="loginBtn">Recevoir le lien magique</button>
+      <p id="authStatus" class="status-msg"></p>
+    </section>
+  </div>
+
+  <div id="appSection" class="hidden">
+    <div class="header">
+      <h2 id="currentWeekTitle">Semaine du ...</h2>
+      <button onclick="logout()" style="width:auto; padding:5px 10px; font-size:12px; background:#ef4444">Déconnexion</button>
+    </div>
+
+    <section>
+      <h3>Objectifs de la semaine</h3>
+      <input type="text" id="obj0" placeholder="Objectif 1" onchange="saveToCloud()">
+      <input type="text" id="obj1" placeholder="Objectif 2" onchange="saveToCloud()">
+    </section>
+
+    <div style="display:flex; gap:5px; overflow-x:auto; margin-bottom:1rem; padding-bottom:5px;">
+      <div class="day-pill active" onclick="selectDay(0)">Lun</div>
+      <div class="day-pill" onclick="selectDay(1)">Mar</div>
+      <div class="day-pill" onclick="selectDay(2)">Mer</div>
+      <div class="day-pill" onclick="selectDay(3)">Jeu</div>
+      <div class="day-pill" onclick="selectDay(4)">Ven</div>
+      <div class="day-pill" onclick="selectDay(5)">Sam</div>
+      <div class="day-pill" onclick="selectDay(6)">Dim</div>
+    </div>
+
+    <section id="dayTasks">
+      <h3 id="selectedDayName">Lundi</h3>
+      <div id="taskList"></div>
+      <div style="margin-top:1rem; border-top:1px solid #334155; padding-top:1rem;">
+        <input type="text" id="newTask" placeholder="Ajouter une habitude...">
+        <button onclick="addTask()">Ajouter</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://ecogcekzeohmreggbwro.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjb2djZWt6ZW9obXJlZ2did3JvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMjYyODksImV4cCI6MjA5MjYwMjI4OX0.Zx48dEQK2INXYnPn96-ySb3zd-d8y_T-xN8z41HHvsU';
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let userData = {
+    objectives: ["", ""],
+    days: { "Lun": [], "Mar": [], "Mer": [], "Jeu": [], "Ven": [], "Sam": [], "Dim": [] }
+  };
+  let currentDay = "Lun";
+  const daysMap = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+  // --- AUTHENTIFICATION ---
+  document.getElementById('loginBtn').onclick = async () => {
+    const email = document.getElementById('emailInput').value;
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+    document.getElementById('authStatus').innerText = error ? error.message : "Lien envoyé ! Vérifie tes mails.";
+  };
+
+  async function logout() { await supabase.auth.signOut(); location.reload(); }
+
+  // --- LOGIQUE APPLI ---
+  function selectDay(index) {
+    currentDay = daysMap[index];
+    document.querySelectorAll('.day-pill').forEach((p, i) => p.classList.toggle('active', i === index));
+    document.getElementById('selectedDayName').innerText = currentDay;
+    renderTasks();
+  }
+
+  function renderTasks() {
+    const list = document.getElementById('taskList');
+    list.innerHTML = userData.days[currentDay].map((t, i) => `
+      <div class="task-card">
+        <span style="${t.done ? 'text-decoration:line-through; color:gray' : ''}" onclick="toggleTask(${i})">${t.text}</span>
+        <span onclick="deleteTask(${i})" style="color:#ef4444; cursor:pointer">✕</span>
+      </div>
+    `).join('');
+  }
+
+  function addTask() {
+    const text = document.getElementById('newTask').value;
+    if(!text) return;
+    userData.days[currentDay].push({ text, done: false });
+    document.getElementById('newTask').value = "";
+    saveToCloud();
+  }
+
+  function toggleTask(i) {
+    userData.days[currentDay][i].done = !userData.days[currentDay][i].done;
+    saveToCloud();
+  }
+
+  function deleteTask(i) {
+    userData.days[currentDay].splice(i, 1);
+    saveToCloud();
+  }
+
+  // --- SAUVEGARDE ET CHARGEMENT ---
+  async function saveToCloud() {
+    userData.objectives = [document.getElementById('obj0').value, document.getElementById('obj1').value];
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      // On utilise le nom de ta colonne 'nom' pour stocker le JSON pour l'instant si tu n'as pas créé 'data'
+      await supabase.from('entries').upsert({ id: 1, nom: JSON.stringify(userData) });
+    }
+    renderTasks();
+  }
+
+  async function loadFromCloud() {
+    const { data, error } = await supabase.from('entries').select('nom').eq('id', 1).single();
+    if (data && data.nom) {
+      try {
+        userData = JSON.parse(data.nom);
+        document.getElementById('obj0').value = userData.objectives[0] || "";
+        document.getElementById('obj1').value = userData.objectives[1] || "";
+        renderTasks();
+      } catch(e) { console.error("Erreur parsing", e); }
+    }
+  }
+
+  async function init() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      document.getElementById('authSection').classList.add('hidden');
+      document.getElementById('appSection').classList.remove('hidden');
+      await loadFromCloud();
+    }
+  }
+  init();
+</script>
+</body>
+</html>
